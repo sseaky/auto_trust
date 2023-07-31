@@ -1,6 +1,6 @@
 # auto_trust
 
-- 将需要管理的域名写入DNS的TXT记录，配合[DDNS]([GitHub - NewFuture/DDNS: :triangular_flag_on_post: 自动更新域名解析到本机IP(支持dnspod,阿里DNS,CloudFlare,华为云,DNSCOM...)](https://github.com/NewFuture/DDNS))，自动加入白名单
+- 将需要管理的域名写入DNS的TXT记录，配合[DDNS](https://github.com/NewFuture/DDNS)，自动加入白名单
 
 - 管控FORWARD链，增加对容器的保护，INPUT链对容器端口无效
 
@@ -9,8 +9,8 @@
 - 自动添加sshd端口
 
 - 对于ssh登陆成功的会话，将源IP加入白名单，开放全端口
-
-- 
+  
+  
 
 # Usage
 
