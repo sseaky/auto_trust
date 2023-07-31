@@ -36,3 +36,13 @@ trustitem  TXT  {"name": "server1 server2", 'network': "network1 network2"}
 * * * * * python3 /root/git/auto_trust/auto_trust.py [xxx.com] > /tmp/auto_trust.log 2>&1
 
 ```
+
+
+
+## CLI command
+
+```
+iptables -nvL INPUT
+iptables -nvL FORWARD
+ipset list
+```
