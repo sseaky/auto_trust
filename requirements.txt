@@ -1,0 +1,8 @@
+dnspython==2.2.1
+ipsetpy==0.0.1a3
+netifaces==0.10.4
+psutil==5.9.5
+python-iptables==1.0.1
+requests==2.28.1
+seakybox==0.2
+utmp==21.10.0
