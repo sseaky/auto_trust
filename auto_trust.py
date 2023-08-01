@@ -8,9 +8,12 @@
 import ipaddress
 import json
 import re
+import socket
 import sys
 import time
 import os
+
+import docker
 import iptc
 import psutil
 import dns.resolver
@@ -394,6 +397,78 @@ def add_local_network():
     for network in local_network:
         check_network(src=network, tag='local network')
 
+def get_connections_info():
+    # 创建 Docker 客户端
+    docker_client = docker.from_env()
+
+    connections = []
+
+    # 遍历所有的网络连接
+    for conn in psutil.net_connections(kind='inet'):
+        # 如果是监听状态，并且本地地址的 IP 是 0.0.0.0
+        if conn.laddr.ip == '0.0.0.0':
+            # 获取对应的进程
+            pid = conn.pid
+            proc = psutil.Process(pid)
+
+            connection_info = {
+                "port": conn.laddr.port,
+                "protocol": 'TCP' if conn.type == socket.SOCK_STREAM else 'UDP',
+                "process_name": proc.name(),
+            }
+
+            # 如果进程名为 docker-proxy
+            if proc.name() == 'docker-proxy':
+                # 遍历所有正在运行的容器
+                for container in docker_client.containers.list():
+                    # 查找该容器是否有端口映射到当前进程的端口
+                    for inside_port, outside_info in container.attrs['HostConfig']['PortBindings'].items():
+                        if outside_info:
+                            for outside_port in outside_info:
+                                if outside_port['HostPort'] == str(conn.laddr.port):
+                                    connection_info['container_name'] = container.name
+                                    connection_info['mapped_port'] = outside_port['HostPort']
+            connections.append(connection_info)
+
+    return connections
+
+
+def print_port():
+    connections = get_connections_info()
+
+    tcp_connections = [x for x in connections if x['protocol'] == 'TCP' and x.get('container_name') is None]
+    tcp_connections.sort(key=lambda v: v['port'])
+    udp_connections = [x for x in connections if x['protocol'] == 'UDP' and x.get('container_name') is None]
+    udp_connections.sort(key=lambda v: v['port'])
+    docker_tcp_connection = [x for x in connections if x['protocol'] == 'TCP' and x.get('container_name')]
+    docker_tcp_connection.sort(key=lambda v: v['port'])
+    docker_udp_connection = [x for x in connections if x['protocol'] == 'UDP' and x.get('container_name')]
+    docker_udp_connection.sort(key=lambda v: v['port'])
+
+    if tcp_connections:
+        print('\n本机开放的 TCP 端口有：')
+        for x in tcp_connections:
+            print('{protocol} {port} {process_name}'.format(**x))
+        print('iptables -A INPUT -p tcp -m multiport --dports {} -j comment --comment "auto tcp {}" -j ACCEPT'.format(
+            ','.join(str(x['port']) for x in tcp_connections), datetime_to_string()))
+    if udp_connections:
+        print('\n本机开放的 UDP 端口有：')
+        for x in udp_connections:
+            print('{protocol} {port} {process_name}'.format(**x))
+        print('iptables -A INPUT -p tcp -m multiport --dports {} -j comment --comment "auto tcp {}" -j ACCEPT'.format(
+            ','.join(str(x['port']) for x in udp_connections), datetime_to_string()))
+    if docker_tcp_connection:
+        print('\n本机容器开放的 TCP 端口有：')
+        for x in docker_tcp_connection:
+            print('{protocol} {port} -> {container_name} {mapped_port}'.format(**x))
+        print('iptables -A FORWARD -p tcp -m multiport --dports {} -j comment --comment "auto tcp {}" -j ACCEPT'.format(
+            ','.join(str(x['port']) for x in docker_tcp_connection), datetime_to_string()))
+    if docker_udp_connection:
+        print('\n本机容器开放的 UDP 端口有：')
+        for x in docker_udp_connection:
+            print('{protocol} {port} -> {container_name} {mapped_port}'.format(**x))
+        print('iptables -A FORWARD -p tcp -m multiport --dports {} -j comment --comment "auto tcp {}" -j ACCEPT'.format(
+            ','.join(str(x['port']) for x in docker_udp_connection), datetime_to_string()))
 
 if __name__ == '__main__':
     resolver = dns.resolver.Resolver()
@@ -413,4 +488,5 @@ if __name__ == '__main__':
     anti_ssh_brute()
     append_default_drop_to_input_chain()
     enforce_forward_chain()
+    print_port()
     print()
