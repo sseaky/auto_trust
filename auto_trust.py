@@ -36,6 +36,8 @@ IPSET_TRUST_NAME_TIMEOUT = 60 * 60 * 24
 IPSET_BAN_NAME = 'ban'
 FLAG_ADD_LOCAL_NETWORK = True
 ALLOW_NETWORK = []
+DNS_NETWORK = []
+DNS_NAME = []
 EXCEPTION_IP = []
 DNS_CACHE = {}
 
@@ -164,7 +166,7 @@ def delete_rules(chain, rules_to_delete):
     table.autocommit = True
 
 
-def check_name(src, tag):
+def check_name(chain, src, tag):
     source_network = ipaddress.ip_network(src)
     flag_exist = False
 
@@ -186,7 +188,7 @@ def check_name(src, tag):
         add_rule(chain, src=src, matches={'comment': tag}, in_interface=default_interface)
 
 
-def check_network(src, tag):
+def check_network(chain, src, tag):
     source_network = ipaddress.ip_network(src)
     flag_exist = False
     for rule in chain.rules:
@@ -209,41 +211,35 @@ def get_listen_port_by_name(name, address='0.0.0.0'):
     return
 
 
-def add_ssh_port():
+def add_ssh_port(chain):
     print('\n添加 sshd 端口')
     port = get_listen_port_by_name('sshd')
     if port:
         add_rule(chain, protocol='tcp', matches={'dport': port, 'comment': 'ssh port'}, in_interface=default_interface)
 
 
-def add_ipset_to_input_chain():
+def add_ipset_to_input_chain(chain):
     add_rule(chain=chain, in_interface=default_interface, matches={'match_set': [IPSET_TRUST_NAME, 'src']},
              target_name='ACCEPT')
 
 
-def add_state():
+def add_state(chain):
     add_rule(chain, matches={'state': 'RELATED,ESTABLISHED', 'comment': 'state'}, in_interface=default_interface)
 
 
-def append_default_drop_to_input_chain():
+def append_default_drop_to_input_chain(chain):
     add_rule(chain=chain, in_interface=default_interface, target_name='DROP', method='append',
              matches={'comment': 'DEFAULT DROP'})
 
 
-def trust_dns():
+def get_txt_record():
+    global DNS_NETWORK, DNS_NAME
     print('\n添加 dns 信任记录')
     txt = json.loads(resolve(TXT_NAME, 'TXT')[0])
-    names = txt['name'].split()
-    networks = txt['network'].split()
-
-    for network in networks:
-        check_network(src=network, tag='dns network')
-
-    for name in names:
-        ip = resolve(f'{name}.{DOMAIN}')[0]
-        tag = f'dns {name}'
-        ipset_add_entry(IPSET_TRUST_NAME, ip, exist=True)
-        check_name(ip, tag)
+    names = txt.get('name', '').split()
+    networks = txt.get('network', '').split()
+    DNS_NETWORK = networks
+    DNS_NAME = names
 
 
 def get_default_interface():
@@ -262,8 +258,7 @@ def create_ipset():
     # ipset_create_set(IPSET_BAN_NAME, 'hash:ip', exist=True)
 
 
-def enforce_forward_chain():
-    chain_forward = iptc.Chain(table, "FORWARD")
+def enforce_forward_chain(chain):
     add_rule(chain=chain_forward, in_interface=default_interface, target_name='DROP',
              matches={'comment': 'DEFAULT DROP'})
     add_rule(chain=chain_forward, matches={'state': 'RELATED,ESTABLISHED', 'comment': 'state'},
@@ -359,15 +354,28 @@ def anti_ssh_brute():
             open(deny_file, 'a').write(item)
 
 
-def add_allow_network():
+def add_dns_name(chain):
+    for name in DNS_NAME:
+        ip = resolve(f'{name}.{DOMAIN}')[0]
+        tag = f'dns {name}'
+        ipset_add_entry(IPSET_TRUST_NAME, ip, exist=True)
+        check_name(chain, ip, tag)
+
+
+def add_dns_network(chain):
+    for network in DNS_NETWORK:
+        check_network(chain=chain, src=network, tag='dns network')
+
+
+def add_allow_network(chain):
     if not ALLOW_NETWORK:
         return
     print('\n添加指定网络')
     for network in ALLOW_NETWORK:
-        check_network(src=network, tag='allow network')
+        check_network(chain=chain, src=network, tag='allow network')
 
 
-def add_local_network():
+def add_local_network(chain):
     if not FLAG_ADD_LOCAL_NETWORK:
         return
     print('\n添加本地网络')
@@ -395,7 +403,8 @@ def add_local_network():
                     print(f'Default gateway {default_gateway} is in network: {network}')
                     local_network.append(network.with_prefixlen)
     for network in local_network:
-        check_network(src=network, tag='local network')
+        check_network(chain=chain, src=network, tag='local network')
+
 
 def get_connections_info():
     # 创建 Docker 客户端
@@ -470,23 +479,33 @@ def print_port():
         print('iptables -A FORWARD -p tcp -m multiport --dports {} -j comment --comment "auto tcp {}" -j ACCEPT'.format(
             ','.join(str(x['port']) for x in docker_udp_connection), datetime_to_string()))
 
+
 if __name__ == '__main__':
     resolver = dns.resolver.Resolver()
     # resolver.nameservers = ['114.114.114.114']
     default_interface = get_default_interface()[1]
     table = iptc.Table(iptc.Table.FILTER)
-    chain = iptc.Chain(table, "INPUT")
+    chain_input = iptc.Chain(table, "INPUT")
+    chain_forward = iptc.Chain(table, "FORWARD")
 
     create_ipset()
     add_current_user_source()
-    add_state()
-    add_ipset_to_input_chain()
-    add_ssh_port()
-    add_local_network()
-    add_allow_network()
-    trust_dns()
+    add_state(chain=chain_input)
+    add_ipset_to_input_chain(chain=chain_input)
+    add_ssh_port(chain=chain_input)
+
+    get_txt_record()
+    add_local_network(chain=chain_input)
+    add_allow_network(chain=chain_input)
+    add_dns_network(chain=chain_input)
+    add_dns_name(chain=chain_input)
+
     anti_ssh_brute()
-    append_default_drop_to_input_chain()
-    enforce_forward_chain()
+    append_default_drop_to_input_chain(chain=chain_input)
+
+    enforce_forward_chain(chain=chain_forward)
+    add_local_network(chain=chain_forward)
+    add_allow_network(chain=chain_forward)
+    add_dns_network(chain=chain_forward)
     print_port()
     print()
