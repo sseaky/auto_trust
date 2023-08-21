@@ -56,13 +56,13 @@ def get_default_interface():
         raise Exception('无默认网关.')
 
 
-def get_listen_ports_by_name(name, address='0.0.0.0'):
+def get_listen_ports_by_name(name):
     ports = []
     for conn in psutil.net_connections(kind='inet'):
         if conn.status == psutil.CONN_LISTEN:
             laddr = conn.laddr
             proc_name = psutil.Process(conn.pid).name()
-            if proc_name == name and laddr[0] == address:
+            if proc_name == name and laddr[0] in ['0.0.0.0', '*', '::']:
                 print(f'监听端口: {laddr[1]}, 进程号: {conn.pid}, 程序名: {proc_name}')
                 ports.append(laddr[1])
     ports.sort()
@@ -89,7 +89,7 @@ def get_connections_info():
     # 遍历所有的网络连接
     for conn in psutil.net_connections(kind='inet'):
         # 如果是监听状态，并且本地地址的 IP 是 0.0.0.0
-        if conn.laddr.ip == '0.0.0.0':
+        if conn.laddr.ip in ['0.0.0.0', '*', '::']:
             # 获取对应的进程
             pid = conn.pid
             proc = psutil.Process(pid)
@@ -432,6 +432,8 @@ class MyFilter():
         data['docker udp'] = [x for x in connections if x['protocol'] == 'UDP' and x.get('container_name')]
 
         for k, v in data.items():
+            if not v:
+                continue
             v.sort(key=lambda v: v['port'])
             print(f'\n本机开放的 {k} 端口有：')
             for x in v:

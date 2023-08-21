@@ -10,8 +10,10 @@ BACKUP_DIR="$DIR_PATH/backup"
 GIT_USER='bot'
 GIT_EMAIL='bot@dust.com'
 
+export PATH=$PATH:/usr/sbin:/sbin
+
 replace_counts() {
-    /usr/sbin/iptables-save | sed -e 's/\[.*\]//g' | sed '/^#/d'
+    iptables-save | sed -e 's/\[.*\]//g' | sed '/^#/d'
 }
 
 compare_rules() {

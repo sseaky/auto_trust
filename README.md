@@ -15,6 +15,9 @@
 # Install
 
 ```
+cd ~/git
+git clone https://github.com/sseaky/myiptables.git
+cd myiptables
 pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 ```
 
@@ -32,6 +35,12 @@ pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 trustitem  TXT  {"name": "server1 server2", 'network': "network1 network2"}
 ```
 
+## Run
+
+```
+python3 /root/git/myiptables/myiptables.py --ssh_brute --display_port --allow_dns [xxx.com]
+```
+
 
 
 ## 手工修改
@@ -39,7 +48,7 @@ trustitem  TXT  {"name": "server1 server2", 'network': "network1 network2"}
 编辑 /etc/network/iptables.up.rules，使用iptables-apply，如果有误，可自动退回
 
 ```
-# chmod +x iptables-apply && mv iptables-apply /usr/sbin/
+# chmod +x iptables-apply && cp iptables-apply /usr/sbin/
  
 # iptables-apply
 Applying new iptables rules from '/etc/network/iptables.up.rules'... done.
@@ -83,4 +92,10 @@ git -C /etc/network diff <hash> iptables.up.rules
 ```
 
 
+
+## 清除
+
+```
+iptables -F && iptables -Z && iptables -X && iptables -nvL
+```
 
