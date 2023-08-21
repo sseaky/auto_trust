@@ -62,8 +62,8 @@ git -C /etc/network diff <hash> iptables.up.rules
 ## Set crontab
 
 ```
-* * * * * python3 /root/git/auto_trust/myiptables.py --ssh_brute --allow_dns [xxx.com] > /tmp/auto_trust.log 2>&1
-* * * * * bash /root/git/auto_trust/iptables_backup.sh
+* * * * * python3 /root/git/auto_trust/myiptables.py --ssh_brute --allow_dns [xxx.com] > /tmp/myiptables.log 2>&1
+* * * * * bash /root/git/auto_trust/iptables_backup.sh > /tmp/iptables_backup.log 2>&1
 ```
 
 
