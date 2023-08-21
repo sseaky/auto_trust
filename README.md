@@ -1,8 +1,8 @@
-# auto_trust
+# MyIptables
 
 - 将需要管理的域名写入DNS的TXT记录，配合[DDNS](https://github.com/NewFuture/DDNS)，自动加入白名单
 
-- 管控FORWARD链，增加对容器的保护，INPUT链对容器端口无效
+- 将INPUT和FORWARD链重定向到自定义链，增加对容器的保护
 
 - 将ssh暴力破解源列入黑名单
 
@@ -18,6 +18,8 @@
 pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 ```
 
+
+
 ## Set DNS
 
 使用DDNS自动更新A记录
@@ -30,19 +32,39 @@ trustitem  TXT  {"name": "server1 server2", 'network': "network1 network2"}
 
 
 
+## Backup
+
+```
+bash iptables_backup.sh
+```
+
+两种方法备份iptables
+
+### file
+
+备份到 /etc/network/backup/iptables.up.rules_<YYYYMMDD_HHMMSS>
+
+### git
+
+查看git日志
+
+```
+# 比较上一次保存
+git -C /etc/network diff HEAD^ iptables.up.rules
+
+# 指定版本比较
+git log
+git -C /etc/network diff <hash> iptables.up.rules
+```
+
+
+
 ## Set crontab
 
 ```
-* * * * * python3 /root/git/auto_trust/auto_trust.py [xxx.com] > /tmp/auto_trust.log 2>&1
-
+* * * * * python3 /root/git/auto_trust/myiptables.py --ssh_brute --allow_dns [xxx.com] > /tmp/auto_trust.log 2>&1
+* * * * * bash /root/git/auto_trust/iptables_backup.sh
 ```
 
 
 
-## CLI command
-
-```
-iptables -nvL INPUT
-iptables -nvL FORWARD
-ipset list
-```
