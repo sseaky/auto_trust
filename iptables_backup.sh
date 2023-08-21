@@ -7,8 +7,8 @@
 DIR_PATH="/etc/network"
 SAVE_PATH="$DIR_PATH/iptables.up.rules"
 BACKUP_DIR="$DIR_PATH/backup"
-GIT_USER='bot'
-GIT_EMAIL='bot@dust.com'
+GIT_USER='seaky'
+GIT_EMAIL='seaky@dust.com'
 
 export PATH=$PATH:/usr/sbin:/sbin
 

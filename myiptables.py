@@ -84,7 +84,7 @@ def get_connections_info():
     # 创建 Docker 客户端
     docker_client = docker.from_env()
 
-    connections = []
+    connections = {}
 
     # 遍历所有的网络连接
     for conn in psutil.net_connections(kind='inet'):
@@ -95,10 +95,14 @@ def get_connections_info():
             proc = psutil.Process(pid)
 
             connection_info = {
-                "port": conn.laddr.port,
-                "protocol": 'TCP' if conn.type == socket.SOCK_STREAM else 'UDP',
-                "process_name": proc.name(),
+                'addr': conn.laddr.ip,
+                'port': conn.laddr.port,
+                'protocol': 'TCP' if conn.type == socket.SOCK_STREAM else 'UDP',
+                'process_name': proc.name(),
             }
+            key = '{protocol}-{port}'.format(**connection_info)
+            if key in connections:
+                continue
 
             # 如果进程名为 docker-proxy
             if proc.name() == 'docker-proxy':
@@ -111,7 +115,7 @@ def get_connections_info():
                                 if outside_port['HostPort'] == str(conn.laddr.port):
                                     connection_info['container_name'] = container.name
                                     connection_info['mapped_port'] = outside_port['HostPort']
-            connections.append(connection_info)
+            connections[key] = connection_info
 
     return connections
 
@@ -426,10 +430,10 @@ class MyFilter():
 
         connections = get_connections_info()
         data = {}
-        data['tcp'] = [x for x in connections if x['protocol'] == 'TCP' and not x.get('container_name')]
-        data['udp'] = [x for x in connections if x['protocol'] == 'UDP' and not x.get('container_name')]
-        data['docker tcp'] = [x for x in connections if x['protocol'] == 'TCP' and x.get('container_name')]
-        data['docker udp'] = [x for x in connections if x['protocol'] == 'UDP' and x.get('container_name')]
+        data['tcp'] = [x for k, x in connections.items() if x['protocol'] == 'TCP' and not x.get('container_name')]
+        data['udp'] = [x for k, x in connections.items() if x['protocol'] == 'UDP' and not x.get('container_name')]
+        data['docker tcp'] = [x for k, x in connections.items() if x['protocol'] == 'TCP' and x.get('container_name')]
+        data['docker udp'] = [x for k, x in connections.items() if x['protocol'] == 'UDP' and x.get('container_name')]
 
         for k, v in data.items():
             if not v:
@@ -437,7 +441,10 @@ class MyFilter():
             v.sort(key=lambda v: v['port'])
             print(f'\n本机开放的 {k} 端口有：')
             for x in v:
-                print('{protocol} {port} {process_name}'.format(**x))
+                if 'docker' in k:
+                    print('{protocol} {port} -> {container_name} {mapped_port}'.format(**x))
+                else:
+                    print('{protocol} {port} {process_name}'.format(**x))
             protocol = k.split()[-1]
             print(
                 'iptables -A {} -i {} -p {} -m multiport --dports {} -m comment --comment "opened {} port" -j ACCEPT'.format(
