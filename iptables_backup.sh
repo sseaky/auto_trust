@@ -11,7 +11,7 @@ GIT_USER='bot'
 GIT_EMAIL='bot@dust.com'
 
 replace_counts() {
-    iptables-save | sed -e 's/\[.*\]//g' | sed '/^#/d'
+    /usr/sbin/iptables-save | sed -e 's/\[.*\]//g' | sed '/^#/d'
 }
 
 compare_rules() {
@@ -57,13 +57,13 @@ backup_to_backup_dir() {
 }
 
 main_backup() {
+    backup_with_git
+
     if compare_rules; then
         echo "No changes detected in iptables rules."
         return
     fi
-
     save_current_rules
-    backup_with_git
     backup_to_backup_dir
 }
 

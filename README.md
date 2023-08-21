@@ -12,13 +12,15 @@
   
   
 
-# Usage
+# Install
 
 ```
 pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 ```
 
 
+
+# Usage
 
 ## Set DNS
 
@@ -28,6 +30,20 @@ pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 ```
 trustitem  TXT  {"name": "server1 server2", 'network': "network1 network2"}
+```
+
+
+
+## 手工修改
+
+编辑 /etc/network/iptables.up.rules，使用iptables-apply，如果有误，可自动退回
+
+```
+# chmod +x iptables-apply && mv iptables-apply /usr/sbin/
+ 
+# iptables-apply
+Applying new iptables rules from '/etc/network/iptables.up.rules'... done.
+Can you establish NEW connections to the machine? (y/N) 
 ```
 
 

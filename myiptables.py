@@ -8,14 +8,17 @@ import ipaddress
 import json
 import os
 import re
+import socket
 import time
 from datetime import datetime
 from functools import wraps
 
 import dns.resolver
+import docker
 import iptc
 import netifaces
 import psutil
+import requests
 import utmp
 
 Pattern_IPv4 = '(?P<ip4>((25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(25[0-5]|2[0-4]\d|[01]?\d\d?))'
@@ -64,6 +67,53 @@ def get_listen_ports_by_name(name, address='0.0.0.0'):
                 ports.append(laddr[1])
     ports.sort()
     return ','.join([str(x) for x in ports])
+
+
+def get_ip_location(ip, api='pconline'):
+    location = ''
+    try:
+        if api == 'pconline':
+            url = 'http://whois.pconline.com.cn/ipJson.jsp?ip={}&json=true'.format(ip)
+            js = requests.get(url).json()
+            location = js['addr']
+            return location.strip()
+    except Exception as e:
+        return location
+
+def get_connections_info():
+    # 创建 Docker 客户端
+    docker_client = docker.from_env()
+
+    connections = []
+
+    # 遍历所有的网络连接
+    for conn in psutil.net_connections(kind='inet'):
+        # 如果是监听状态，并且本地地址的 IP 是 0.0.0.0
+        if conn.laddr.ip == '0.0.0.0':
+            # 获取对应的进程
+            pid = conn.pid
+            proc = psutil.Process(pid)
+
+            connection_info = {
+                "port": conn.laddr.port,
+                "protocol": 'TCP' if conn.type == socket.SOCK_STREAM else 'UDP',
+                "process_name": proc.name(),
+            }
+
+            # 如果进程名为 docker-proxy
+            if proc.name() == 'docker-proxy':
+                # 遍历所有正在运行的容器
+                for container in docker_client.containers.list():
+                    # 查找该容器是否有端口映射到当前进程的端口
+                    for inside_port, outside_info in container.attrs['HostConfig']['PortBindings'].items():
+                        if outside_info:
+                            for outside_port in outside_info:
+                                if outside_port['HostPort'] == str(conn.laddr.port):
+                                    connection_info['container_name'] = container.name
+                                    connection_info['mapped_port'] = outside_port['HostPort']
+            connections.append(connection_info)
+
+    return connections
 
 
 class MyDNS():
@@ -314,19 +364,18 @@ class MyFilter():
         js = json.loads(txt[0])
         names = js.get('name', '').split()
         networks = js.get('network', '').split()
-        for name in names:
+        for network in networks[::-1]:
+            d = {'target': network, 'comment': 'dns network'}
+            rule = self.make_rule(in_interface=self.default_interface, src=d['target'],
+                                  matches={'comment': {'comment': d['comment']}}, comment_with_ts=True)
+            self.insert_rule(rule)
+        for name in names[::-1]:
             ip = self.md.resolve(f'{name}.{domain_root}')[0]
             comment = f'dns name {name}'
             d = {'target': ip, 'comment': comment}
             rule = self.make_rule(in_interface=self.default_interface, src=d['target'],
                                   matches={'comment': {'comment': d['comment']}}, comment_with_ts=True)
             self.update_rule_by_comment(rule)
-        for network in networks:
-            d = {'target': network, 'comment': 'dns network'}
-            rule = self.make_rule(in_interface=self.default_interface, src=d['target'],
-                                  matches={'comment': {'comment': d['comment']}}, comment_with_ts=True)
-            self.insert_rule(rule)
-
         return
 
     def prevent_ssh_brute_force_attacking(self, minimal_fail_times=5):
@@ -358,14 +407,39 @@ class MyFilter():
             if v['count'] < minimal_fail_times:
                 continue
             rule = self.make_rule(in_interface=self.default_interface, src=host, target_name='DROP',
-                                  matches={'comment': {'comment': 'ssh fail {} times @{}'.format(
+                                  matches={'comment': {'comment': 'ssh fail {} times, @{}'.format(
                                       v['count'], datetime_str)}})
-            self.insert_rule(rule)
+            if not self.check_rule_in_chain(rule, chain=self.chain_custom):
+                location = get_ip_location(host)
+                rule = self.make_rule(in_interface=self.default_interface, src=host, target_name='DROP',
+                                      matches={'comment': {'comment': 'ssh fail {} times, {}, {}'.format(
+                                          v['count'], location, datetime_str)}})
+                self.insert_rule(rule)
 
     def append_default_drop_to_custom_chain(self):
         rule = self.make_rule(in_interface=self.default_interface, target_name='DROP',
                               matches={'comment': {'comment': 'DEFAULT DROP'}})
         self.append_rule(rule)
+
+    def display_opened_port(self):
+        print('\n***** 显示本机开放的端口 *****')
+
+        connections = get_connections_info()
+        data = {}
+        data['tcp'] = [x for x in connections if x['protocol'] == 'TCP' and not x.get('container_name')]
+        data['udp'] = [x for x in connections if x['protocol'] == 'UDP' and not x.get('container_name')]
+        data['docker tcp'] = [x for x in connections if x['protocol'] == 'TCP' and x.get('container_name')]
+        data['docker udp'] = [x for x in connections if x['protocol'] == 'UDP' and x.get('container_name')]
+
+        for k, v in data.items():
+            v.sort(key=lambda v: v['port'])
+            print(f'\n本机开放的 {k} 端口有：')
+            for x in v:
+                print('{protocol} {port} {process_name}'.format(**x))
+            protocol = k.split()[-1]
+            print(
+                'iptables -A {} -i {} -p {} -m multiport --dports {} -m comment --comment "opened {} port" -j ACCEPT'.format(
+                    self.chain_custom_name, self.default_interface, protocol, ','.join(str(x['port']) for x in v), k))
 
     def clear(self):
         rule = self.make_rule(target_name=self.chain_custom_name)
@@ -384,6 +458,9 @@ def main():
     parser.add_argument('--ssh_brute', action='store_true',
                         help='Indicates if SSH brute force is enabled.')
 
+    parser.add_argument('--display_port', action='store_true',
+                        help='Display currently opened port')
+
     args = parser.parse_args()
 
     mf = MyFilter()
@@ -400,9 +477,12 @@ def main():
 
     mf.append_default_drop_to_custom_chain()
 
+    if args.display_port:
+        mf.display_opened_port()
+
     # my.clear()
     print()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
