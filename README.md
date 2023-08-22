@@ -25,6 +25,14 @@ pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 # Usage
 
+## 添加白名单
+
+```
+WHITELIST = {'2.2.2.2': 'test', '3.3.3.0/25': 'test2'}
+```
+
+
+
 ## Set DNS
 
 使用DDNS自动更新A记录

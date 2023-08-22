@@ -23,6 +23,8 @@ import utmp
 
 Pattern_IPv4 = '(?P<ip4>((25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(25[0-5]|2[0-4]\d|[01]?\d\d?))'
 TRUSTNAME = 'trustitem'
+# WHITELIST = {<target>:<comment>}
+WHITELIST = {}
 
 
 def datetime_to_string(dt=None, fmt='%Y-%m-%d %H:%M:%S'):
@@ -362,6 +364,14 @@ class MyFilter():
         self.insert_rule(rule)
         return
 
+    def allow_whitelist(self):
+        print('\n添加指定白名单')
+        for target, comment in WHITELIST.items():
+            rule = self.make_rule(in_interface=self.default_interface, src=target,
+                                  matches={'comment': {'comment': comment}})
+            self.insert_rule(rule)
+
+
     def allow_dns(self, domain_root):
         print('\n添加 dns 信任记录')
         txt = self.md.resolve(f'{TRUSTNAME}.{domain_root}', rdtype='TXT')
@@ -393,9 +403,8 @@ class MyFilter():
             fns.append(f'{btmp_file}.{i}')
         for i, fn in enumerate(fns):
             if not os.path.exists(fn):
-                if fn == btmp_file:
-                    print(f'{fn} 不存在')
                 break
+            print(f'解析 {fn}')
             buf = open(fn, 'rb').read()
             entries = [x for x in utmp.read(buf)]
             for entry in entries[::-1]:
@@ -421,6 +430,7 @@ class MyFilter():
                 self.insert_rule(rule)
 
     def append_default_drop_to_custom_chain(self):
+        print('\n添加默认 DROP')
         rule = self.make_rule(in_interface=self.default_interface, target_name='DROP',
                               matches={'comment': {'comment': 'DEFAULT DROP'}})
         self.append_rule(rule)
@@ -460,15 +470,10 @@ def main():
     parser = argparse.ArgumentParser(description='加固iptables')
 
     # 定义 --allow_dns 参数，它接受一个参数值 (域名)
-    parser.add_argument('--allow_dns', type=str, metavar='root domain',
-                        help='Allows a specific domain.')
-
+    parser.add_argument('--allow_dns', type=str, metavar='root domain', help='指定根域名，用来解析dns')
     # 定义 --ssh_brute 参数，这是一个标志，它没有参数值，如果存在则其值为 True，否则为 False
-    parser.add_argument('--ssh_brute', action='store_true',
-                        help='Indicates if SSH brute force is enabled.')
-
-    parser.add_argument('--display_port', action='store_true',
-                        help='Display currently opened port')
+    parser.add_argument('--ssh_brute', action='store_true', help='检查ssh登陆失败记录')
+    parser.add_argument('--display_port', action='store_true', help='显示当前开放的端口')
 
     args = parser.parse_args()
 
@@ -476,6 +481,7 @@ def main():
     mf.check_existing_items()
     mf.allow_state()
     mf.allow_sshd()
+    mf.allow_whitelist()
     mf.allow_current_user_source()
 
     if args.allow_dns:
