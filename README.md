@@ -31,6 +31,8 @@ pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 WHITELIST = {'2.2.2.2': 'test', '3.3.3.0/25': 'test2'}
 ```
 
+也可以单独放到config.py中
+
 
 
 ## Set DNS

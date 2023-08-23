@@ -23,8 +23,12 @@ import utmp
 
 Pattern_IPv4 = '(?P<ip4>((25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(25[0-5]|2[0-4]\d|[01]?\d\d?))'
 TRUSTNAME = 'trustitem'
+
 # WHITELIST = {<target>:<comment>}
-WHITELIST = {}
+if os.path.exists('config.py'):
+    from config import WHITELIST
+else:
+    WHITELIST = {}
 
 
 def datetime_to_string(dt=None, fmt='%Y-%m-%d %H:%M:%S'):
@@ -199,7 +203,7 @@ class MyFilter():
             print('添加链 {}'.format(self.chain_custom_name))
         self.chain_custom = iptc.Chain(iptc.Table(iptc.Table.FILTER), self.chain_custom_name)
 
-        rule = self.make_rule(target_name=self.chain_custom_name)
+        rule = self.make_rule(in_interface=self.default_interface, target_name=self.chain_custom_name)
         self.insert_rule(rule, self.chain_input)
         self.insert_rule(rule, self.chain_forward)
 
