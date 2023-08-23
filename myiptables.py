@@ -66,11 +66,11 @@ def get_listen_ports_by_name(name):
     ports = []
     for conn in psutil.net_connections(kind='inet'):
         if conn.status == psutil.CONN_LISTEN:
-            laddr = conn.laddr
+            ip, port = conn.laddr
             proc_name = psutil.Process(conn.pid).name()
-            if proc_name == name and laddr[0] in ['0.0.0.0', '*', '::']:
-                print(f'监听端口: {laddr[1]}, 进程号: {conn.pid}, 程序名: {proc_name}')
-                ports.append(laddr[1])
+            if proc_name == name and ip in ['0.0.0.0', '*', '::'] and port not in ports:
+                print(f'监听端口: {ip}:{port}, 进程号: {conn.pid}, 程序名: {proc_name}')
+                ports.append(port)
     ports.sort()
     return ','.join([str(x) for x in ports])
 
