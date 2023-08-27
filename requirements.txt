@@ -2,7 +2,6 @@
 dnspython==2.2.1
 docker==4.1.0
 ipsetpy==0.0.1a3
-netifaces==0.10.4
 psutil==5.9.5
 python-iptables==1.0.1
 requests

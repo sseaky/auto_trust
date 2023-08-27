@@ -59,7 +59,6 @@ backup_to_backup_dir() {
 }
 
 main_backup() {
-    backup_with_git
 
     if compare_rules; then
         echo "No changes detected in iptables rules."
@@ -67,6 +66,7 @@ main_backup() {
     fi
     save_current_rules
     backup_to_backup_dir
+    backup_with_git
 }
 
 main_backup

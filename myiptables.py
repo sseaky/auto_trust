@@ -9,6 +9,7 @@ import json
 import os
 import re
 import socket
+import subprocess
 import time
 from datetime import datetime
 from functools import wraps
@@ -16,7 +17,6 @@ from functools import wraps
 import dns.resolver
 import docker
 import iptc
-import netifaces
 import psutil
 import requests
 import utmp
@@ -28,7 +28,9 @@ TRUSTNAME = 'trustitem'
 if os.path.exists('config.py'):
     from config import WHITELIST
 else:
-    WHITELIST = {}
+    WHITELIST = {
+        '127.0.0.0/8': 'test'
+    }
 
 
 def datetime_to_string(dt=None, fmt='%Y-%m-%d %H:%M:%S'):
@@ -51,15 +53,25 @@ def chain_name_to_obj():
     return deco
 
 
-def get_default_interface():
-    gws = netifaces.gateways()
-    default_gateway = gws['default'].get(netifaces.AF_INET)
+def get_default_network_info():
+    try:
+        # 获取默认路由
+        default_route = subprocess.check_output("ip route | grep default", shell=True).decode('utf-8')
+        # 通过空格分隔并提取相关信息
+        parts = default_route.split()
+        gateway = parts[2]
+        interface = parts[4]
 
-    if default_gateway:
-        print('默认网关: {}, 网卡名: {}'.format(default_gateway[0], default_gateway[1]))
-        return default_gateway
-    else:
-        raise Exception('无默认网关.')
+        # 获取与此接口相关的 IPv4 地址及其掩码
+        ip_info = subprocess.check_output(f"ip addr show {interface} | grep 'inet '", shell=True).decode(
+            'utf-8').strip()
+        ip_address_with_mask = ip_info.split()[1]
+        ip_address, mask = ip_address_with_mask.split('/')
+
+        return interface, ip_address, mask, gateway
+    except Exception as e:
+        print(f"Error: {e}")
+        return None, None, None, None
 
 
 def get_listen_ports_by_name(name):
@@ -85,6 +97,7 @@ def get_ip_location(ip, api='pconline'):
             return location.strip()
     except Exception as e:
         return location
+
 
 def get_connections_info():
     # 创建 Docker 客户端
@@ -155,7 +168,7 @@ class MyDNS():
 class MyFilter():
     def __init__(self, ipset_trust_name='trust', ipset_trust_name_timeout=60 * 60 * 24,
                  ipset_ban_name='ban', ssh_brute_fail=5, chain_custom_name='MYCHAIN'):
-        self.default_gateway, self.default_interface = get_default_interface()
+        self.default_interface, self.default_ip, self.default_mask, self.default_gateway = get_default_network_info()
         self.table_filter = iptc.Table(iptc.Table.FILTER)
         self.chain_input = iptc.Chain(iptc.Table(iptc.Table.FILTER), 'INPUT')
         self.chain_forward = iptc.Chain(iptc.Table(iptc.Table.FILTER), 'FORWARD')
@@ -189,12 +202,12 @@ class MyFilter():
     def check_accepted_src(self, ip):
         for x in self.cache['accepted_src']:
             if ipaddress.ip_address(ip) in x:
-                return True
+                return x
 
     def check_dropped_src(self, ip):
         for x in self.cache['dropped_src']:
             if ipaddress.ip_address(ip) in x:
-                return True
+                return x
 
     def create_and_install_custom_chain(self):
         if self.chain_custom_name not in [chain.name for chain in self.table_filter.chains]:
@@ -375,7 +388,6 @@ class MyFilter():
                                   matches={'comment': {'comment': comment}})
             self.insert_rule(rule)
 
-
     def allow_dns(self, domain_root):
         print('\n添加 dns 信任记录')
         txt = self.md.resolve(f'{TRUSTNAME}.{domain_root}', rdtype='TXT')
@@ -422,6 +434,9 @@ class MyFilter():
             datetime_str = datetime_to_string(dt=v['time'])
             print('{host} ssh 失败 {count} 次 @ {}'.format(datetime_str, **v))
             if v['count'] < minimal_fail_times:
+                continue
+            if self.check_accepted_src(host):
+                print(f'\t存在白名单 {self.check_accepted_src(host)}')
                 continue
             rule = self.make_rule(in_interface=self.default_interface, src=host, target_name='DROP',
                                   matches={'comment': {'comment': 'ssh fail {} times, @{}'.format(

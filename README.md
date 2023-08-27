@@ -81,6 +81,8 @@ bash iptables_backup.sh
 
 ### git
 
+需要git 2.x
+
 查看git日志
 
 ```
@@ -107,5 +109,29 @@ git -C /etc/network diff <hash> iptables.up.rules
 
 ```
 iptables -F && iptables -Z && iptables -X && iptables -nvL
+```
+
+
+
+# 问题
+
+centos 7升级git 2.x
+
+```
+git version
+yum install https://packages.endpointdev.com/rhel/7/os/x86_64/endpoint-repo.x86_64.rpm && yum install git
+git version
+```
+
+python3执行成功，但iptables -nvL又看不到，需要检查iptables后端是x_tables还是nftables ，python用的iptc模板只兼容x_tables
+
+```
+# 检查后端
+iptables --version
+
+# 设置后端
+sudo update-alternatives --set iptables /usr/sbin/iptables-legacy
+sudo update-alternatives --set ip6tables /usr/sbin/ip6tables-legacy
+
 ```
 
