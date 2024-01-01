@@ -13,6 +13,7 @@ import subprocess
 import time
 from datetime import datetime
 from functools import wraps
+from termcolor import cprint
 
 import dns.resolver
 import docker
@@ -295,8 +296,17 @@ class MyFilter():
                     s1 += f' --{k} {v}'
             s.append(s1)
         ss = ' '.join(s)
-        msg = f' -s {rule.src} -d {rule.dst} {ss} -j {rule.target.name}'
-        return msg
+        msg = []
+        if rule.in_interface is not None:
+            msg.append(f'-i {rule.in_interface}')
+        if rule.protocol != 'ip':
+            msg.append(f'-p {rule.protocol}')
+        if rule.src != '0.0.0.0/0.0.0.0':
+            msg.append(f'-s {rule.src}')
+        if rule.dst != '0.0.0.0/0.0.0.0':
+            msg.append(f'-d {rule.dst}')
+        msg.append(f'{ss} -j {rule.target.name}')
+        return ' '.join(msg)
 
     @chain_name_to_obj()
     def insert_rule(self, rule, chain=None, skip_comment=True):
@@ -331,7 +341,7 @@ class MyFilter():
         self.insert_rule(rule)
 
     def allow_port_by_app_name(self, name, protocol='tcp'):
-        print('添加 {} 端口'.format(name))
+        cprint('添加 {} 端口'.format(name), 'green')
         ports = get_listen_ports_by_name(name)
         if ports:
             rule = self.make_rule(protocol=protocol,
@@ -342,11 +352,8 @@ class MyFilter():
         else:
             print('没有找到 {} 相关端口'.format(name))
 
-    def allow_sshd(self):
-        self.allow_port_by_app_name(name='sshd')
-
     def allow_current_user_source(self, hours=1):
-        print('\n添加当前登陆用户的源地址')
+        cprint('\n添加当前登陆用户的源地址', 'green')
         # 获取当前登录用户的信息
         users_info = psutil.users()
         # 遍历并打印用户信息
@@ -361,6 +368,11 @@ class MyFilter():
                 rule = self.make_rule(in_interface=self.default_interface, src=ip,
                                       matches={'comment': {'comment': 'current user'}}, comment_with_ts=True)
                 self.insert_rule(rule)
+
+    def allow_icmp(self):
+        cprint('\n允许icmp', 'green')
+        rule = self.make_rule(in_interface=self.default_interface, protocol='icmp')
+        self.insert_rule(rule)
 
     def get_comment_from_rule(self, rule, strip_time=False):
         comment = None
@@ -382,14 +394,14 @@ class MyFilter():
         return
 
     def allow_whitelist(self):
-        print('\n添加指定白名单')
+        cprint('\n添加指定白名单', 'green')
         for target, comment in WHITELIST.items():
             rule = self.make_rule(in_interface=self.default_interface, src=target,
                                   matches={'comment': {'comment': comment}})
             self.insert_rule(rule)
 
     def allow_dns(self, domain_root):
-        print('\n添加 dns 信任记录')
+        cprint('\n添加 dns 信任记录', 'green')
         txt = self.md.resolve(f'{TRUSTNAME}.{domain_root}', rdtype='TXT')
         js = json.loads(txt[0])
         names = js.get('name', '').split()
@@ -409,7 +421,7 @@ class MyFilter():
         return
 
     def prevent_ssh_brute_force_attacking(self, minimal_fail_times=5):
-        print('\n检查登陆失败日志，最小失败阈值 {} 次'.format(minimal_fail_times))
+        cprint('\n检查登陆失败日志，最小失败阈值 {} 次'.format(minimal_fail_times), 'green')
         # deny_file = '/etc/hosts.deny'
         failed_attempt = {}
 
@@ -420,16 +432,19 @@ class MyFilter():
         for i, fn in enumerate(fns):
             if not os.path.exists(fn):
                 break
-            print(f'解析 {fn}')
-            buf = open(fn, 'rb').read()
-            entries = [x for x in utmp.read(buf)]
-            for entry in entries[::-1]:
-                if entry.type == utmp.UTmpRecordType.login_process:
-                    host = entry.host
-                    if host not in failed_attempt:
-                        failed_attempt[host] = {'count': 1, 'time': entry.time, 'host': host}
-                    else:
-                        failed_attempt[host]['count'] += 1
+            try:
+                print(f'解析 {fn}')
+                buf = open(fn, 'rb').read()
+                entries = [x for x in utmp.read(buf)]
+                for entry in entries[::-1]:
+                    if entry.type == utmp.UTmpRecordType.login_process:
+                        host = entry.host
+                        if host not in failed_attempt:
+                            failed_attempt[host] = {'count': 1, 'time': entry.time, 'host': host}
+                        else:
+                            failed_attempt[host]['count'] += 1
+            except Exception as e:
+                cprint(f'解析 {fn} 失败', 'red')
         for host, v in failed_attempt.items():
             datetime_str = datetime_to_string(dt=v['time'])
             print('{host} ssh 失败 {count} 次 @ {}'.format(datetime_str, **v))
@@ -449,13 +464,13 @@ class MyFilter():
                 self.insert_rule(rule)
 
     def append_default_drop_to_custom_chain(self):
-        print('\n添加默认 DROP')
+        cprint('\n添加默认 DROP', 'green')
         rule = self.make_rule(in_interface=self.default_interface, target_name='DROP',
                               matches={'comment': {'comment': 'DEFAULT DROP'}})
         self.append_rule(rule)
 
     def display_opened_port(self):
-        print('\n***** 显示本机开放的端口 *****')
+        cprint('\n***** 显示本机开放的端口 *****', 'green')
 
         connections = get_connections_info()
         data = {}
@@ -489,17 +504,21 @@ def main():
     parser = argparse.ArgumentParser(description='加固iptables')
 
     # 定义 --allow_dns 参数，它接受一个参数值 (域名)
-    parser.add_argument('--allow_dns', type=str, metavar='root domain', help='指定根域名，用来解析dns')
+    parser.add_argument('--allow-dns', type=str, metavar='root domain', help='指定根域名，用来解析dns')
+    parser.add_argument('--allow-icmp', action='store_true', help='允许ping')
     # 定义 --ssh_brute 参数，这是一个标志，它没有参数值，如果存在则其值为 True，否则为 False
-    parser.add_argument('--ssh_brute', action='store_true', help='检查ssh登陆失败记录')
-    parser.add_argument('--display_port', action='store_true', help='显示当前开放的端口')
+    parser.add_argument('--ssh-brute', action='store_true', help='检查ssh登陆失败记录')
+    parser.add_argument('--display-port', action='store_true', help='显示当前开放的端口')
+    # parser.add_argument('--ipv6', action='store_true', help='加固ipv6链')
 
     args = parser.parse_args()
 
     mf = MyFilter()
     mf.check_existing_items()
     mf.allow_state()
-    mf.allow_sshd()
+    mf.allow_port_by_app_name('sshd')
+    # mf.allow_port_by_app_name('zabbix_agentd')
+    mf.allow_icmp()
     mf.allow_whitelist()
     mf.allow_current_user_source()
 

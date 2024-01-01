@@ -48,7 +48,7 @@ trustitem  TXT  {"name": "server1 server2", 'network': "network1 network2"}
 ## Run
 
 ```
-python3 /root/git/myiptables/myiptables.py --ssh_brute --display_port --allow_dns [xxx.com]
+python3 /root/git/myiptables/myiptables.py --ssh-brute --display-port --allow-dns [xxx.com]
 ```
 
 
@@ -99,7 +99,7 @@ git -C /etc/network diff <hash> iptables.up.rules
 ## Set crontab
 
 ```
-* * * * * python3 /root/git/myiptables/myiptables.py --ssh_brute --allow_dns [xxx.com] > /tmp/myiptables.log 2>&1
+* * * * * python3 /root/git/myiptables/myiptables.py --ssh-brute --allow-dns [xxx.com] > /tmp/myiptables.log 2>&1
 * * * * * bash /root/git/myiptables/iptables_backup.sh > /tmp/iptables_backup.log 2>&1
 ```
 
@@ -111,9 +111,23 @@ git -C /etc/network diff <hash> iptables.up.rules
 iptables -F && iptables -Z && iptables -X && iptables -nvL
 ```
 
+此命令会清除Dock链，需要重启dock进程恢复
+
 
 
 # 问题
+
+AttributeError: module 'lib' has no attribute 'X509_V_FLAG_CB_ISSUER_CHECK'
+
+```
+pip install pip --upgrade
+或者
+apt remove python3-pip 
+wget https://bootstrap.pypa.io/get-pip.py
+python3 get-pip.py
+
+pip install pyopenssl --upgrade
+```
 
 centos 7升级git 2.x
 
